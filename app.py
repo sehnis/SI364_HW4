@@ -22,7 +22,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 # Imports for login management
 from flask_login import LoginManager, login_required, logout_user, login_user, UserMixin, current_user
-from werkzeug.security import generate_password_hash, 
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from giphy_api_key import api_key
 
@@ -134,7 +134,7 @@ class SearchTerm(db.Model):
     gifs = db.relationship('Gif', secondary=search_gifs, backref=db.backref('searches', lazy='dynamic'), lazy='dynamic')
     # TODO 364: Define a __repr__ method for this model class that returns the term string
     def __repr__(self):
-        return('Search Term: %s' % (self.term))
+        return('%s' % (self.term))
 
 
 ########################
@@ -198,7 +198,7 @@ def get_gif_by_id(id):
 
 def get_or_create_gif(title, url):
     """Always returns a Gif instance"""
-    found_gif = Gif.query.filter_by(title=title).first():
+    found_gif = Gif.query.filter_by(title=title).first()
     if found_gif:
         return found_gif
     else:
@@ -211,7 +211,7 @@ def get_or_create_gif(title, url):
 def get_or_create_search_term(term):
     """Always returns a SearchTerm instance"""
     # TODO 364: This function should return the search term instance if it already exists.
-    found_search = Search.query.filter_by(term=term).first():
+    found_search = SearchTerm.query.filter_by(term=term).first()
     if found_search:
         return found_search
     # If it does not exist in the database yet, this function should create a new SearchTerm instance.
@@ -221,7 +221,7 @@ def get_or_create_search_term(term):
     # This function should invoke the get_gifs_from_giphy function to get a list of gif data from Giphy.
     got_gifs = get_gifs_from_giphy(term)
     # It should iterate over that list acquired from Giphy and invoke get_or_create_gif for each, and then append the return value from get_or_create_gif to the search term's associated gifs (remember, many-to-many relationship between search terms and gifs, allowing you to do this!).
-    for gif in gifs:
+    for gif in got_gifs:
         to_add = get_or_create_gif(gif['title'], gif['embed_url'])
         new_search.gifs.append(to_add)
     # If a new search term were created, it should finally be added and committed to the database.
@@ -246,7 +246,6 @@ def get_or_create_collection(name, current_user, gif_list=[]):
     db.session.add(new_collection)
     db.session.commit()
     return new_collection
-
 
 ########################
 #### View functions ####
@@ -302,9 +301,12 @@ def secret():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     # TODO 364: Edit this view function, which has a provided return statement, so that the GifSearchForm can be rendered.
+    form = GifSearchForm()
     # If the form is submitted successfully:
+    if form.validate_on_submit():
     # invoke get_or_create_search_term on the form input and redirect to the function corresponding to the path /gifs_searched/<search_term> in order to see the results of the gif search. (Just a couple lines of code!)
-
+        search_term = get_or_create_search_term(form.search.data)
+        return redirect(url_for('search_results', search_term=search_term))
     # HINT: invoking url_for with a named argument will send additional data. e.g. url_for('artist_info',artist='solange') would send the data 'solange' to a route /artist_info/<artist>
     return render_template('index.html',form=form)
 
@@ -317,10 +319,11 @@ def search_results(search_term):
 
 @app.route('/search_terms')
 def search_terms():
-    pass # Replace with code
     # TODO 364: Edit this view function so it renders search_terms.html.
     # That template should show a list of all the search terms that have been searched so far. Each one should link to the gifs that resulted from that search.
+    all_terms = SearchTerm.query.all()
     # HINT: All you have to do is make the right query in this view function and send the right data to the template! You can complete this in two lines. Check out the template for more hints!
+    return render_template('search_terms.html', all_terms=all_terms)
 
 # Provided
 @app.route('/all_gifs')
@@ -336,14 +339,23 @@ def create_collection():
     choices = [(g.id, g.title) for g in gifs]
     form.gif_picks.choices = choices
     # TODO 364: If the form validates on submit, get the list of the gif ids that were selected from the form. Use the get_gif_by_id function to create a list of Gif objects.  Then, use the information available to you at this point in the function (e.g. the list of gif objects, the current_user) to invoke the get_or_create_collection function, and redirect to the page that shows a list of all your collections.
+    if form.validate_on_submit():
+        picked_gifs = []
+        for pick in form.gif_picks.data:
+            gif = get_gif_by_id(pick[0])
+            picked_gifs.append(gif)
+        get_or_create_collection(form.name.data, current_user, picked_gifs)
+        return(redirect(url_for('collections')))
     # If the form is not validated, this view function should simply render the create_collection.html template and send the form to the template.
-
+    print('failed validation')
+    return render_template('create_collection.html', form=form)
 
 @app.route('/collections',methods=["GET","POST"])
 @login_required
 def collections():
-    pass # Replace with code
+    all_collections = PersonalGifCollection.query.filter_by(user=current_user.id).all()
     # TODO 364: This view function should render the collections.html template so that only the current user's personal gif collection links will render in that template. Make sure to examine the template so that you send it the correct data!
+    return(render_template('collections.html', collections=all_collections))
 
 # Provided
 @app.route('/collection/<id_num>')
